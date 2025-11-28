@@ -11,7 +11,7 @@ generic_params = { "<" ~ ident ~ ("," ~ ident)* ~ ">" }
 generic_args   = { "<" ~ type_expr ~ ("," ~ type_expr)* ~ ">" }
 
 // Definitions
-struct_def = { "struct" ~ ident ~ generic_params? ~ "{" ~ (struct_field ~ ("," ~ struct_field)*)? ~ "}" }
+struct_def   = { "struct" ~ ident ~ generic_params? ~ "{" ~ (struct_field ~ ("," ~ struct_field)*)? ~ "}" }
 struct_field = { ident ~ ":" ~ type_expr }
 
 impl_def      = { "impl" ~ generic_params? ~ (ident ~ generic_args? ~ "for")? ~ ident ~ generic_args? ~ "{" ~ fn_def* ~ "}" }
@@ -24,7 +24,7 @@ param      = { ident ~ ":" ~ type_expr }
 // Statements
 block       = { "{" ~ stmt* ~ "}" }
 stmt        = { let_stmt | return_stmt | expr_stmt }
-let_stmt = { "let" ~ "mut"? ~ ident ~ (":" ~ type_expr)? ~ ("=" ~ expr)? }
+let_stmt    = { "let" ~ "mut"? ~ ident ~ (":" ~ type_expr)? ~ ("=" ~ expr)? }
 return_stmt = { "return" ~ expr }
 expr_stmt   = { expr }
 
@@ -68,36 +68,38 @@ prefix = _{ neg | not }
 neg    =  { "-" }
 not    =  { "!" }
 
-atom = _{
-    struct_init
-  | term
-  | literal
-  | "(" ~ expr ~ ")"
+atom = _{ 
+    struct_init | 
+    term | 
+    literal | 
+    "(" ~ expr ~ ")" |
+    block
 }
+
 
 // Struct Init (must come before term to capture "Animal {")
 struct_init = { ident ~ generic_args? ~ "{" ~ (field_init ~ ("," ~ field_init)*)? ~ "}" }
 field_init  = { ident ~ ":" ~ expr }
 
 // Term (Variables, Calls, Dot access)
-term = { ident ~ generic_args? ~ term_suffix* }
-term_suffix = _{ method_call | member_access }
-method_call = { "(" ~ arg_list? ~ ")" }
-member_access = { "." ~ ident }
-call_suffix = { "(" ~ arg_list? ~ ")" | "." ~ ident }
-arg_list    = { expr ~ ("," ~ expr)* }
+term          =  { ident ~ generic_args? ~ term_suffix* }
+term_suffix   = _{ method_call | member_access }
+method_call   =  { "(" ~ arg_list? ~ ")" }
+member_access =  { "." ~ ident }
+call_suffix   =  { "(" ~ arg_list? ~ ")" | "." ~ ident }
+arg_list      =  { expr ~ ("," ~ expr)* }
 
-literal = { int_lit | string_lit | bool_lit } // No @ here. It's a container.
-int_lit = @{ ASCII_DIGIT+ }
+literal    =  { int_lit | string_lit | bool_lit }
+// No @ here. It's a container.
+int_lit    = @{ ASCII_DIGIT+ }
 string_lit = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
-bool_lit = @{ "true" | "false" }
+bool_lit   = @{ "true" | "false" }
 
 // Types
 type_expr = { mut_token? ~ ptr_token? ~ ident ~ generic_args? }
-mut_token = { "mut" }   // <--- Named rule creates a Pair
+mut_token = { "mut" }
+// <--- Named rule creates a Pair
 ptr_token = { "*" }
 
 ident   = @{ !keyword ~ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
 keyword =  { "fn" | "struct" | "impl" | "typeclass" | "let" | "mut" | "return" | "true" | "false" }
-
-

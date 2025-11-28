@@ -4,6 +4,7 @@ use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::{Assoc::*, Op, PrattParser};
 use pest_derive::Parser;
 
+// Import your AST enums
 use crate::ast::*;
 
 #[derive(Parser)]
@@ -38,6 +39,7 @@ pub fn parse_program(source: &str) -> Result<Program, pest::error::Error<Rule>> 
     let mut items = Vec::new();
     for inner in root.into_inner() {
         if inner.as_rule() == Rule::item {
+            // Unwrap the item to get struct_def, fn_def, etc.
             let specific_item = inner.into_inner().next().unwrap();
             items.push(parse_item(specific_item));
         }
@@ -48,8 +50,7 @@ pub fn parse_program(source: &str) -> Result<Program, pest::error::Error<Rule>> 
 
 fn parse_item(pair: Pair<Rule>) -> Item {
     match pair.as_rule() {
-        Rule::fn_def => Item::Fn(parse_fn_struct(pair)),
-
+        Rule::fn_def => Item::Fn(parse_fn(pair)),
         Rule::struct_def => parse_struct(pair),
         Rule::stmt => {
             let stmt = parse_stmt(pair.into_inner().next().unwrap());
@@ -61,7 +62,7 @@ fn parse_item(pair: Pair<Rule>) -> Item {
     }
 }
 
-fn parse_fn_struct(pair: Pair<Rule>) -> Function {
+fn parse_fn(pair: Pair<Rule>) -> Function {
     let mut inner = pair.into_inner();
 
     let name = inner.next().unwrap().as_str().to_string();
@@ -107,19 +108,28 @@ fn parse_impl(pair: Pair<Rule>) -> Item {
     let mut generics = Vec::new();
     let mut methods = Vec::new();
 
+    // We need to figure out if it's "impl Type" or "impl Trait for Type"
+    // We'll collect all types found before the functions start.
+    // If we find 1 type -> It's the Target.
+    // If we find 2 types -> First is Trait, Second is Target.
+
     let mut header_types: Vec<Type> = Vec::new();
 
     for part in inner {
         match part.as_rule() {
             Rule::generic_params => generics = parse_generic_params(part),
             Rule::ident => {
+                // When we hit an ident in the header, it's part of a type name
+                // ident ~ generic_args?
+                // But the iterator splits them. need to construct a Type::Named.
                 let name = part.as_str().to_string();
                 header_types.push(Type::Named {
                     name,
                     generics: vec![],
-                });
+                }); // generic_args might fill this later
             }
             Rule::generic_args => {
+                // If we see generic args, they belong to the LAST type we pushed
                 if let Some(last_type) = header_types.last_mut() {
                     if let Type::Named { generics: g, .. } = last_type {
                         *g = parse_generic_args(part);
@@ -127,12 +137,13 @@ fn parse_impl(pair: Pair<Rule>) -> Item {
                 }
             }
             Rule::fn_def => {
-                methods.push(parse_fn_struct(part));
+                methods.push(parse_fn(part));
             }
             _ => {}
         }
     }
 
+    // distinguish "impl A" vs "impl A for B"
     let (trait_name, target_type) = if header_types.len() == 1 {
         (None, header_types.pop().unwrap())
     } else if header_types.len() == 2 {
@@ -165,7 +176,7 @@ fn parse_typeclass(pair: Pair<Rule>) -> Item {
         match part.as_rule() {
             Rule::ident => name = part.as_str().to_string(),
             Rule::generic_params => generics = parse_generic_params(part),
-            Rule::fn_def => methods.push(parse_fn_struct(part)),
+            Rule::fn_def => methods.push(parse_fn(part)),
             _ => {}
         }
     }
@@ -177,47 +188,8 @@ fn parse_typeclass(pair: Pair<Rule>) -> Item {
     }
 }
 
-fn parse_fn(pair: Pair<Rule>) -> Item {
-    let mut inner = pair.into_inner();
-
-    let name = inner.next().unwrap().as_str().to_string();
-
-    let mut generics = Vec::new();
-    let mut next_token = inner.next().unwrap();
-    if next_token.as_rule() == Rule::generic_params {
-        generics = parse_generic_params(next_token);
-        next_token = inner.next().unwrap();
-    }
-
-    let mut params = Vec::new();
-    if next_token.as_rule() == Rule::param_list {
-        for param_pair in next_token.into_inner() {
-            let mut p_inner = param_pair.into_inner();
-            let p_name = p_inner.next().unwrap().as_str().to_string();
-            let p_type = parse_type(p_inner.next().unwrap());
-            params.push((p_name, p_type));
-        }
-        next_token = inner.next().unwrap();
-    }
-
-    let mut ret_type = None;
-    if next_token.as_rule() == Rule::type_expr {
-        ret_type = Some(parse_type(next_token));
-        next_token = inner.next().unwrap();
-    }
-
-    let body = parse_block(next_token);
-
-    Item::Fn(Function {
-        name,
-        generics,
-        params,
-        ret_type,
-        body,
-    })
-}
-
 fn parse_struct(pair: Pair<Rule>) -> Item {
+    // We iterate over the inner tokens directly
     let inner_all = pair.into_inner();
 
     let mut fields: Vec<(String, Type)> = Vec::new();
@@ -268,9 +240,11 @@ fn parse_stmt(pair: Pair<Rule>) -> Stmt {
 
             let name = name_part.as_str().to_string();
 
+            // The next part could be a type annotation OR an assignment OR nothing
             let mut annotation = None;
             let mut value = None;
 
+            // Loop through remaining parts to see what they are
             for part in parts {
                 match part.as_rule() {
                     Rule::type_expr => {
@@ -290,7 +264,6 @@ fn parse_stmt(pair: Pair<Rule>) -> Stmt {
                 value,
             }
         }
-
         Rule::return_stmt => {
             let expr = parse_expr(inner.into_inner().next().unwrap().into_inner());
             Stmt::Return(expr)
@@ -347,6 +320,8 @@ fn parse_atom(pair: Pair<Rule>) -> Expr {
         Rule::struct_init => parse_struct_init(pair),
         Rule::term => parse_term(pair),
         Rule::expr => parse_expr(pair.into_inner()),
+        Rule::block => Expr::Block(parse_block(pair)),
+
         _ => panic!("Unexpected atom: {:?}", pair.as_rule()),
     }
 }
@@ -355,6 +330,7 @@ fn parse_literal(pair: Pair<Rule>) -> Expr {
     match pair.as_rule() {
         Rule::int_lit => Expr::Literal(Literal::Int(pair.as_str().parse().unwrap())),
         Rule::string_lit => {
+            // Remove quotes
             let s = pair.as_str();
             Expr::Literal(Literal::String(s[1..s.len() - 1].to_string()))
         }
@@ -367,27 +343,35 @@ fn parse_struct_init(pair: Pair<Rule>) -> Expr {
     let mut inner = pair.into_inner();
     let name = inner.next().unwrap().as_str().to_string();
 
-    let mut next = inner.next().unwrap();
     let mut generics = Vec::new();
-    if next.as_rule() == Rule::generic_args {
-        generics = parse_generic_args(next);
-        if let Some(n) = inner.next() {
-            next = n;
-        } else {
-            return Expr::StructInit {
-                name,
-                generics,
-                fields: vec![],
-            };
-        }
-    }
-
     let mut fields = Vec::new();
 
-    if next.as_rule() == Rule::field_init {
-        fields.push(parse_field_init(next));
-        for f in inner {
-            fields.push(parse_field_init(f));
+    if let Some(pair) = inner.next() {
+        let mut current_pair = pair;
+
+        // check for Generics
+        if current_pair.as_rule() == Rule::generic_args {
+            generics = parse_generic_args(current_pair);
+
+            // If there are fields after generics, get the next pair
+            if let Some(next) = inner.next() {
+                current_pair = next;
+            } else {
+                // Generics but no fields: Dog<Int> {}
+                return Expr::StructInit {
+                    name,
+                    generics,
+                    fields,
+                };
+            }
+        }
+
+        // parse fields
+        if current_pair.as_rule() == Rule::field_init {
+            fields.push(parse_field_init(current_pair));
+            for p in inner {
+                fields.push(parse_field_init(p));
+            }
         }
     }
 
@@ -405,6 +389,7 @@ fn parse_field_init(pair: Pair<Rule>) -> (String, Expr) {
     (name, expr)
 }
 
+// Variables, Calls, Member Access
 fn parse_term(pair: Pair<Rule>) -> Expr {
     let mut inner = pair.into_inner();
 
@@ -422,7 +407,6 @@ fn parse_term(pair: Pair<Rule>) -> Expr {
         match part.as_rule() {
             Rule::generic_args => {
                 generics = parse_generic_args(part);
-
                 if let Expr::Variable { name, .. } = expr {
                     expr = Expr::Variable {
                         name,
@@ -466,6 +450,7 @@ fn parse_type(pair: Pair<Rule>) -> Type {
     let mut mutable = false;
     let mut pointer = false;
 
+    // Default values in case parsing fails (shouldn't happen with valid grammar)
     let mut name = String::new();
     let mut generics = Vec::new();
 
@@ -528,7 +513,6 @@ mod tests {
             if let Type::Named { name, .. } = trait_name.as_ref().unwrap() {
                 assert_eq!(name, "Barks");
             }
-
             if let Type::Named { name, .. } = target_type {
                 assert_eq!(name, "Animal");
             }
@@ -546,7 +530,6 @@ mod tests {
         } = &program2.items[0]
         {
             assert!(trait_name.is_none());
-
             if let Type::Named { name, .. } = target_type {
                 assert_eq!(name, "Animal");
             }

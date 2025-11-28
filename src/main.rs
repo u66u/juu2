@@ -13,12 +13,18 @@ fn main() {
             y: Int
         }
 
+        typeclass Animal {
+            fn bark(obj: mut *Self) -> String {
+}
+        }
+
         fn dot_product(a: Vector, b: Vector) -> Int {
             -- Implicit return of the math expression
             a.x * b.x + a.y * b.y
         }
 
         fn main() {
+            let xd = 5
             let v1 = Vector { x: 10, y: 20 }
             
             -- Type inference should figure out v2 is a Vector
@@ -39,6 +45,7 @@ fn main() {
     match parser::parse_program(source_code) {
         Ok(program) => {
             println!("   ✅ Parse Successful!");
+            println!("Ast: {:?}", &program);
 
             println!("2. Checking Types...");
             match checker::check_program(&program) {

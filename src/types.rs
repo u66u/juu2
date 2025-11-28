@@ -45,6 +45,7 @@ pub enum TypeVar {
 pub struct ProgramContext {
     pub types: HashMap<String, TypeInfo>,
     pub functions: HashMap<String, Scheme>,
+    pub traits: HashMap<String, TraitInfo>,
 }
 
 // Holds 'let' variables and generic type parameters (?T)
@@ -63,6 +64,14 @@ pub struct TypeInfo {
     pub name: String,
     pub fields: HashMap<String, Type>,
     pub generics: Vec<u32>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TraitInfo {
+    pub name: String,
+    pub generics: Vec<u32>,
+    // Method Name -> Signature
+    pub methods: HashMap<String, Scheme>,
 }
 
 // "Scheme" is a type with generics: forall T. T -> T (Hindley-Milner checks)

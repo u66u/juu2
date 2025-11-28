@@ -36,6 +36,7 @@ pub enum Expr {
         object: Box<Expr>,
         field: String,
     },
+    Block(Vec<Stmt>),
 }
 
 #[derive(Debug, Clone)]

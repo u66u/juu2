@@ -18,14 +18,16 @@ pub fn new_var(level: usize) -> Type {
     })))
 }
 
+// If we have a chain of links (?A -> ?B -> Int), this shortens it to (?A -> Int) and returns the actual type.
 pub fn prune(t: Type) -> Type {
     match t {
         Type::Var(ref v) => {
             let mut inner = v.lock().unwrap();
             match *inner {
                 TypeVar::Known(ref actual) => {
+                    // Recurse to find the bottom
                     let deep = prune(actual.clone());
-
+                    // Path compression: Point this var directly to the bottom
                     *inner = TypeVar::Known(deep.clone());
                     deep
                 }
@@ -36,13 +38,17 @@ pub fn prune(t: Type) -> Type {
     }
 }
 
+// Turns a Scheme (forall T. List<T>) into a Type (List<?1>)
+// "level" is the current scope depth (used for let-generalization later)
 pub fn instantiate(scheme: &Scheme, current_level: usize) -> Type {
+    // Map GenericID -> New Unknown Variable
     let mut map = HashMap::new();
 
     for gen_id in &scheme.generics {
         map.insert(*gen_id, new_var(current_level));
     }
 
+    // Recursive helper to replace Generic(id) with the new var
     fn replace(t: Type, map: &HashMap<u32, Type>) -> Type {
         match t {
             Type::Var(v) => {
@@ -56,7 +62,6 @@ pub fn instantiate(scheme: &Scheme, current_level: usize) -> Type {
                     TypeVar::Known(k) => return replace(k.clone(), map),
                     _ => {}
                 }
-
                 drop(inner);
                 Type::Var(v)
             }
@@ -79,6 +84,8 @@ pub fn instantiate(scheme: &Scheme, current_level: usize) -> Type {
     replace(scheme.ty.clone(), &map)
 }
 
+// Checks if a specific TypeVar ID appears inside another type.
+// If we try to bind ?1 to List<?1>, this returns true (Recursive Type Error).
 fn occurs_in_type(id: u32, t: &Type) -> bool {
     let t = prune(t.clone());
     match t {
@@ -99,13 +106,16 @@ fn occurs_in_type(id: u32, t: &Type) -> bool {
     }
 }
 
+// Links a type variable to a concrete type.
 fn bind(v_arc: Arc<Mutex<TypeVar>>, id: u32, t: Type) -> Result<(), String> {
+    // If we are binding ?T to ?T, do nothing.
     if let Type::Var(other) = &t {
         if Arc::ptr_eq(&v_arc, other) {
             return Ok(());
         }
     }
 
+    // Occurs Check: Prevent recursive types
     if occurs_in_type(id, &t) {
         return Err(format!("Recursive type detected: ?{} inside {:?}", id, t));
     }
@@ -115,6 +125,7 @@ fn bind(v_arc: Arc<Mutex<TypeVar>>, id: u32, t: Type) -> Result<(), String> {
     Ok(())
 }
 
+// "Make t1 and t2 the same. If they aren't, allow them to infer from each other."
 pub fn unify(t1: Type, t2: Type) -> Result<(), String> {
     let t1 = prune(t1);
     let t2 = prune(t2);
@@ -122,8 +133,10 @@ pub fn unify(t1: Type, t2: Type) -> Result<(), String> {
     println!("DEBUG: Unifying {:?} == {:?}", t1, t2);
 
     match (t1.clone(), t2.clone()) {
+        // Case A: One side is a Variable -> Bind it.
         (Type::Var(v), t) | (t, Type::Var(v)) => {
             if let Type::Var(other) = &t {
+                // first check if ptrs are equal
                 if Arc::ptr_eq(&v, other) {
                     return Ok(());
                 }
@@ -138,6 +151,8 @@ pub fn unify(t1: Type, t2: Type) -> Result<(), String> {
                 }
             };
 
+            // else check for Content Identity (Generic ID == Generic ID)
+            // If both are Generics and have the same ID, they are equal.
             if v_is_generic {
                 if let Type::Var(other_arc) = &t {
                     let other_inner = other_arc.lock().unwrap();
@@ -147,10 +162,10 @@ pub fn unify(t1: Type, t2: Type) -> Result<(), String> {
                         }
                     }
                 }
-
                 return Err(format!("Cannot unify rigid Generic T (id {})", v_id));
             }
 
+            // else: Normal Binding (for Unknown variables)
             bind(v, v_id, t)
         }
 
@@ -251,9 +266,7 @@ pub fn generalize(t: Type, current_level: usize) -> Scheme {
                         if !generics.contains(&id) {
                             generics.push(id);
                         }
-
                         *inner = TypeVar::Generic { id };
-
                         drop(inner);
                         Type::Var(v.clone())
                     }
