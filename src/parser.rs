@@ -3,8 +3,6 @@ use pest::Parser;
 use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::{Assoc::*, Op, PrattParser};
 use pest_derive::Parser;
-
-// Import your AST enums
 use crate::ast::*;
 
 #[derive(Parser)]
@@ -39,7 +37,6 @@ pub fn parse_program(source: &str) -> Result<Program, pest::error::Error<Rule>> 
     let mut items = Vec::new();
     for inner in root.into_inner() {
         if inner.as_rule() == Rule::item {
-            // Unwrap the item to get struct_def, fn_def, etc.
             let specific_item = inner.into_inner().next().unwrap();
             items.push(parse_item(specific_item));
         }
@@ -108,10 +105,10 @@ fn parse_impl(pair: Pair<Rule>) -> Item {
     let mut generics = Vec::new();
     let mut methods = Vec::new();
 
-    // We need to figure out if it's "impl Type" or "impl Trait for Type"
-    // We'll collect all types found before the functions start.
-    // If we find 1 type -> It's the Target.
-    // If we find 2 types -> First is Trait, Second is Target.
+    // need to figure out if it's "impl Type" or "impl Trait for Type"
+    // collect all types found before the functions start.
+    // 1 type -> It's the Target.
+    // 2 types -> First is Trait, Second is Target.
 
     let mut header_types: Vec<Type> = Vec::new();
 
@@ -126,7 +123,7 @@ fn parse_impl(pair: Pair<Rule>) -> Item {
                 header_types.push(Type::Named {
                     name,
                     generics: vec![],
-                }); // generic_args might fill this later
+                }); // generic_args will fill this later
             }
             Rule::generic_args => {
                 // If we see generic args, they belong to the LAST type we pushed

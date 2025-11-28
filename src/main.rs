@@ -1,6 +1,6 @@
 mod ast;
-mod ast_to_ir;
 mod checker;
+mod monomorphize;
 mod infer;
 mod ir;
 mod parser;
@@ -10,32 +10,39 @@ use std::fs;
 
 fn main() {
     let source_code = r#"
-        struct Vector {
+        struct Point {
             x: Int,
             y: Int
+        }
+        struct Vector {
+            x: Point,
+            y: Point
+        }
+
+        struct Gen<T> {
+            internal: T
         }
 
         typeclass Animal {
             fn bark(obj: mut *Self) -> String {
-}
+                "bark"
+            }
+        }
+
+        impl<T> Animal for Gen<T> {
+            fn bark(obj: Self) {
+                "bark"
+            }
         }
 
         fn dot_product(a: Vector, b: Vector) -> Int {
-            -- Implicit return of the math expression
-            a.x * b.x + a.y * b.y
+            a.x.x * b.x.x + a.y.y * b.y.y
         }
 
         fn main() {
             let xd = 5
-            let v1 = Vector { x: 10, y: 20 }
-            
-            -- Type inference should figure out v2 is a Vector
-            let v2 = Vector { x: 3, y: 4 }
-            
-            let result = dot_product(v1, v2)
-            
-            -- This variable 'check' is inferred as Int
-            let check = result + 100
+            let g = Gen<Int> {}
+            g.bark()
         }
     "#;
 
