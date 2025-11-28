@@ -2,7 +2,7 @@
 pub enum Type {
     Named { name: String, generics: Vec<Type> },
     Pointer { inner: Box<Type>, mutable: bool },
-    TypeVar(String), // type inference
+    TypeVar(String), 
 }
 
 #[derive(Debug, Clone)]

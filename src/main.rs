@@ -1,6 +1,8 @@
 mod ast;
+mod ast_to_ir;
 mod checker;
 mod infer;
+mod ir;
 mod parser;
 mod types;
 

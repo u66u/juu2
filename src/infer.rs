@@ -247,69 +247,6 @@ pub fn unify(t1: Type, t2: Type) -> Result<(), String> {
     }
 }
 
-pub fn generalize(t: Type, current_level: usize) -> Scheme {
-    let t = prune(t);
-    let mut generics = Vec::new();
-    let mut map = HashMap::new();
-
-    fn scan(
-        t: Type,
-        current_level: usize,
-        generics: &mut Vec<u32>,
-        map: &mut HashMap<u32, Type>,
-    ) -> Type {
-        match t {
-            Type::Var(v) => {
-                let mut inner = v.lock().unwrap();
-                match *inner {
-                    TypeVar::Unknown { id, level } if level > current_level => {
-                        if !generics.contains(&id) {
-                            generics.push(id);
-                        }
-                        *inner = TypeVar::Generic { id };
-                        drop(inner);
-                        Type::Var(v.clone())
-                    }
-                    TypeVar::Known(ref k) => {
-                        let k = k.clone();
-                        drop(inner);
-                        scan(k, current_level, generics, map)
-                    }
-                    _ => {
-                        drop(inner);
-                        Type::Var(v)
-                    }
-                }
-            }
-            Type::Constructor { name, types } => Type::Constructor {
-                name,
-                types: types
-                    .into_iter()
-                    .map(|arg| scan(arg, current_level, generics, map))
-                    .collect(),
-            },
-            Type::Function { params, ret } => Type::Function {
-                params: params
-                    .into_iter()
-                    .map(|p| scan(p, current_level, generics, map))
-                    .collect(),
-                ret: Box::new(scan(*ret, current_level, generics, map)),
-            },
-            Type::Pointer { inner, mutable } => Type::Pointer {
-                inner: Box::new(scan(*inner, current_level, generics, map)),
-                mutable,
-            },
-            _ => t,
-        }
-    }
-
-    let new_type = scan(t, current_level, &mut generics, &mut map);
-    Scheme {
-        generics,
-        ty: new_type,
-    }
-}
-
 pub fn substitute(t: Type, map: &HashMap<u32, Type>) -> Type {
     match t {
         Type::Var(v) => {
@@ -474,23 +411,5 @@ mod tests {
         };
 
         assert!(unify(fn1, fn2).is_err());
-    }
-
-    #[test]
-    fn test_generalize_and_instantiate() {
-        let t = new_var(2);
-
-        let scheme = generalize(t.clone(), 1);
-        assert!(!scheme.generics.is_empty());
-
-        let new_t = instantiate(&scheme, 1);
-
-        if let Type::Var(v_arc) = new_t {
-            if let Type::Var(old_arc) = t {
-                assert!(!Arc::ptr_eq(&v_arc, &old_arc));
-            }
-        } else {
-            panic!("Expected Variable");
-        }
     }
 }

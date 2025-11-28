@@ -46,6 +46,7 @@ pub struct ProgramContext {
     pub types: HashMap<String, TypeInfo>,
     pub functions: HashMap<String, Scheme>,
     pub traits: HashMap<String, TraitInfo>,
+    pub fn_bodies: HashMap<String, crate::ast::Function>,
 }
 
 // Holds 'let' variables and generic type parameters (?T)

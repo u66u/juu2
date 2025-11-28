@@ -357,6 +357,7 @@ fn collect_traits(program: &ast::Program) -> Result<HashMap<String, TraitInfo>, 
                 types: HashMap::new(),
                 functions: HashMap::new(),
                 traits: HashMap::new(),
+                fn_bodies: HashMap::new(),
             };
             let mut env = Env::new(&dummy_ctx);
 
@@ -561,6 +562,7 @@ pub fn check_program(program: &ast::Program) -> Result<ProgramContext, String> {
         types: HashMap::new(),
         functions: HashMap::new(),
         traits: HashMap::new(),
+        fn_bodies: HashMap::new(),
     };
 
     collect_types(program, &mut ctx)?;
