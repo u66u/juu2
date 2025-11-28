@@ -11,7 +11,7 @@ generic_params = { "<" ~ ident ~ ("," ~ ident)* ~ ">" }
 generic_args   = { "<" ~ type_expr ~ ("," ~ type_expr)* ~ ">" }
 
 // Definitions
-struct_def   = { "struct" ~ ident ~ generic_params? ~ "{" ~ struct_field* ~ "}" }
+struct_def = { "struct" ~ ident ~ generic_params? ~ "{" ~ (struct_field ~ ("," ~ struct_field)*)? ~ "}" }
 struct_field = { ident ~ ":" ~ type_expr }
 
 impl_def      = { "impl" ~ generic_params? ~ (ident ~ generic_args? ~ "for")? ~ ident ~ generic_args? ~ "{" ~ fn_def* ~ "}" }

@@ -2,7 +2,6 @@ use crate::types::*;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-
 static mut TYPE_VAR_COUNTER: u32 = 0;
 
 pub fn fresh_id() -> u32 {
@@ -12,7 +11,6 @@ pub fn fresh_id() -> u32 {
     }
 }
 
-
 pub fn new_var(level: usize) -> Type {
     Type::Var(Arc::new(Mutex::new(TypeVar::Unknown {
         id: fresh_id(),
@@ -20,18 +18,14 @@ pub fn new_var(level: usize) -> Type {
     })))
 }
 
-
-
-
 pub fn prune(t: Type) -> Type {
     match t {
         Type::Var(ref v) => {
             let mut inner = v.lock().unwrap();
             match *inner {
                 TypeVar::Known(ref actual) => {
-                    
                     let deep = prune(actual.clone());
-                    
+
                     *inner = TypeVar::Known(deep.clone());
                     deep
                 }
@@ -42,18 +36,13 @@ pub fn prune(t: Type) -> Type {
     }
 }
 
-
-
-
 pub fn instantiate(scheme: &Scheme, current_level: usize) -> Type {
-    
     let mut map = HashMap::new();
 
     for gen_id in &scheme.generics {
         map.insert(*gen_id, new_var(current_level));
     }
 
-    
     fn replace(t: Type, map: &HashMap<u32, Type>) -> Type {
         match t {
             Type::Var(v) => {
@@ -67,7 +56,7 @@ pub fn instantiate(scheme: &Scheme, current_level: usize) -> Type {
                     TypeVar::Known(k) => return replace(k.clone(), map),
                     _ => {}
                 }
-                
+
                 drop(inner);
                 Type::Var(v)
             }
@@ -90,9 +79,6 @@ pub fn instantiate(scheme: &Scheme, current_level: usize) -> Type {
     replace(scheme.ty.clone(), &map)
 }
 
-
-
-
 fn occurs_in_type(id: u32, t: &Type) -> bool {
     let t = prune(t.clone());
     match t {
@@ -113,58 +99,66 @@ fn occurs_in_type(id: u32, t: &Type) -> bool {
     }
 }
 
-
-
 fn bind(v_arc: Arc<Mutex<TypeVar>>, id: u32, t: Type) -> Result<(), String> {
-    
     if let Type::Var(other) = &t {
         if Arc::ptr_eq(&v_arc, other) {
             return Ok(());
         }
     }
 
-    
     if occurs_in_type(id, &t) {
         return Err(format!("Recursive type detected: ?{} inside {:?}", id, t));
     }
 
-    
     let mut inner = v_arc.lock().unwrap();
     *inner = TypeVar::Known(t);
     Ok(())
 }
 
-
-
-
 pub fn unify(t1: Type, t2: Type) -> Result<(), String> {
-    
     let t1 = prune(t1);
     let t2 = prune(t2);
 
+    println!("DEBUG: Unifying {:?} == {:?}", t1, t2);
+
     match (t1.clone(), t2.clone()) {
-        
         (Type::Var(v), t) | (t, Type::Var(v)) => {
-            let id = {
+            if let Type::Var(other) = &t {
+                if Arc::ptr_eq(&v, other) {
+                    return Ok(());
+                }
+            }
+
+            let (v_id, v_is_generic) = {
                 let inner = v.lock().unwrap();
                 match *inner {
-                    TypeVar::Unknown { id, .. } => id,
+                    TypeVar::Unknown { id, .. } => (id, false),
                     TypeVar::Known(_) => unreachable!("Prune should have handled Known"),
-                    TypeVar::Generic { .. } => {
-                        return Err("Cannot unify rigid Generic T".to_string());
-                    }
+                    TypeVar::Generic { id } => (id, true),
                 }
             };
-            bind(v, id, t)
+
+            if v_is_generic {
+                if let Type::Var(other_arc) = &t {
+                    let other_inner = other_arc.lock().unwrap();
+                    if let TypeVar::Generic { id: other_id } = *other_inner {
+                        if v_id == other_id {
+                            return Ok(());
+                        }
+                    }
+                }
+
+                return Err(format!("Cannot unify rigid Generic T (id {})", v_id));
+            }
+
+            bind(v, v_id, t)
         }
 
-        
         (Type::Int, Type::Int) => Ok(()),
         (Type::Bool, Type::Bool) => Ok(()),
         (Type::String, Type::String) => Ok(()),
         (Type::Void, Type::Void) => Ok(()),
 
-        
         (
             Type::Constructor {
                 name: n1,
@@ -192,7 +186,6 @@ pub fn unify(t1: Type, t2: Type) -> Result<(), String> {
             Ok(())
         }
 
-        
         (
             Type::Function {
                 params: p1,
@@ -216,7 +209,6 @@ pub fn unify(t1: Type, t2: Type) -> Result<(), String> {
             unify(*r1, *r2)
         }
 
-        
         (
             Type::Pointer {
                 inner: i1,
@@ -236,19 +228,15 @@ pub fn unify(t1: Type, t2: Type) -> Result<(), String> {
             unify(*i1, *i2)
         }
 
-        
         _ => Err(format!("Type Mismatch: {:?} != {:?}", t1, t2)),
     }
 }
-
-
 
 pub fn generalize(t: Type, current_level: usize) -> Scheme {
     let t = prune(t);
     let mut generics = Vec::new();
     let mut map = HashMap::new();
 
-    
     fn scan(
         t: Type,
         current_level: usize,
@@ -260,19 +248,18 @@ pub fn generalize(t: Type, current_level: usize) -> Scheme {
                 let mut inner = v.lock().unwrap();
                 match *inner {
                     TypeVar::Unknown { id, level } if level > current_level => {
-                        
                         if !generics.contains(&id) {
                             generics.push(id);
                         }
-                        
+
                         *inner = TypeVar::Generic { id };
-                        
+
                         drop(inner);
                         Type::Var(v.clone())
                     }
                     TypeVar::Known(ref k) => {
                         let k = k.clone();
-                        drop(inner); 
+                        drop(inner);
                         scan(k, current_level, generics, map)
                     }
                     _ => {
@@ -310,6 +297,38 @@ pub fn generalize(t: Type, current_level: usize) -> Scheme {
     }
 }
 
+pub fn substitute(t: Type, map: &HashMap<u32, Type>) -> Type {
+    match t {
+        Type::Var(v) => {
+            let inner = v.lock().unwrap();
+            match &*inner {
+                TypeVar::Generic { id } => {
+                    if let Some(replacement) = map.get(id) {
+                        return replacement.clone();
+                    }
+                }
+                TypeVar::Known(k) => return substitute(k.clone(), map),
+                _ => {}
+            }
+            drop(inner);
+            Type::Var(v)
+        }
+        Type::Constructor { name, types } => Type::Constructor {
+            name,
+            types: types.into_iter().map(|arg| substitute(arg, map)).collect(),
+        },
+        Type::Function { params, ret } => Type::Function {
+            params: params.into_iter().map(|p| substitute(p, map)).collect(),
+            ret: Box::new(substitute(*ret, map)),
+        },
+        Type::Pointer { inner, mutable } => Type::Pointer {
+            inner: Box::new(substitute(*inner, map)),
+            mutable,
+        },
+        _ => t,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -326,20 +345,17 @@ mod tests {
 
     #[test]
     fn test_var_binding() {
-        
         let v1 = new_var(0);
         let t_int = Type::Int;
 
         assert!(unify(v1.clone(), t_int).is_ok());
 
-        
         let pruned = prune(v1);
         assert_eq!(pruned, Type::Int);
     }
 
     #[test]
     fn test_list_generics() {
-        
         let var_a = new_var(0);
         let list_var = Type::Constructor {
             name: "List".into(),
@@ -352,14 +368,11 @@ mod tests {
 
         assert!(unify(list_var, list_int).is_ok());
 
-        
         assert_eq!(prune(var_a), Type::Int);
     }
 
     #[test]
     fn test_function_unify() {
-        
-        
         let var_a = new_var(0);
         let var_b = new_var(0);
 
@@ -380,7 +393,6 @@ mod tests {
 
     #[test]
     fn test_recursive_crash() {
-        
         let var_a = new_var(0);
         let list_a = Type::Constructor {
             name: "List".into(),
@@ -390,5 +402,82 @@ mod tests {
         let result = unify(var_a, list_a);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Recursive"));
+    }
+
+    #[test]
+    fn test_complex_unification_chain() {
+        let a = new_var(0);
+        let b = new_var(0);
+        let c = new_var(0);
+
+        unify(a.clone(), b.clone()).unwrap();
+        unify(b.clone(), c.clone()).unwrap();
+        unify(c.clone(), Type::Int).unwrap();
+
+        assert_eq!(prune(a), Type::Int);
+    }
+
+    #[test]
+    fn test_nested_constructor_mismatch() {
+        let inner_int = Type::Constructor {
+            name: "List".into(),
+            types: vec![Type::Int],
+        };
+        let outer_int = Type::Constructor {
+            name: "List".into(),
+            types: vec![inner_int],
+        };
+
+        let inner_bool = Type::Constructor {
+            name: "List".into(),
+            types: vec![Type::Bool],
+        };
+        let outer_bool = Type::Constructor {
+            name: "List".into(),
+            types: vec![inner_bool],
+        };
+
+        assert!(unify(outer_int, outer_bool).is_err());
+    }
+
+    #[test]
+    fn test_function_arg_mismatch_complex() {
+        let list_int = Type::Constructor {
+            name: "List".into(),
+            types: vec![Type::Int],
+        };
+        let list_bool = Type::Constructor {
+            name: "List".into(),
+            types: vec![Type::Bool],
+        };
+
+        let fn1 = Type::Function {
+            params: vec![list_int],
+            ret: Box::new(Type::Void),
+        };
+        let fn2 = Type::Function {
+            params: vec![list_bool],
+            ret: Box::new(Type::Void),
+        };
+
+        assert!(unify(fn1, fn2).is_err());
+    }
+
+    #[test]
+    fn test_generalize_and_instantiate() {
+        let t = new_var(2);
+
+        let scheme = generalize(t.clone(), 1);
+        assert!(!scheme.generics.is_empty());
+
+        let new_t = instantiate(&scheme, 1);
+
+        if let Type::Var(v_arc) = new_t {
+            if let Type::Var(old_arc) = t {
+                assert!(!Arc::ptr_eq(&v_arc, &old_arc));
+            }
+        } else {
+            panic!("Expected Variable");
+        }
     }
 }

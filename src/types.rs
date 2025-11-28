@@ -62,6 +62,7 @@ pub struct Env<'a> {
 pub struct TypeInfo {
     pub name: String,
     pub fields: HashMap<String, Type>,
+    pub generics: Vec<u32>,
 }
 
 // "Scheme" is a type with generics: forall T. T -> T (Hindley-Milner checks)

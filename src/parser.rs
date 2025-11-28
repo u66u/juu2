@@ -4,14 +4,11 @@ use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::{Assoc::*, Op, PrattParser};
 use pest_derive::Parser;
 
-
 use crate::ast::*;
 
 #[derive(Parser)]
 #[grammar = "grammar.pest"]
 pub struct LangParser;
-
-
 
 lazy_static! {
     static ref PRATT_PARSER: PrattParser<Rule> = {
@@ -34,16 +31,13 @@ lazy_static! {
     };
 }
 
-
-
 pub fn parse_program(source: &str) -> Result<Program, pest::error::Error<Rule>> {
     let mut pairs = LangParser::parse(Rule::program, source)?;
-    let root = pairs.next().unwrap(); 
+    let root = pairs.next().unwrap();
 
     let mut items = Vec::new();
     for inner in root.into_inner() {
         if inner.as_rule() == Rule::item {
-            
             let specific_item = inner.into_inner().next().unwrap();
             items.push(parse_item(specific_item));
         }
@@ -54,7 +48,6 @@ pub fn parse_program(source: &str) -> Result<Program, pest::error::Error<Rule>> 
 
 fn parse_item(pair: Pair<Rule>) -> Item {
     match pair.as_rule() {
-        
         Rule::fn_def => Item::Fn(parse_fn_struct(pair)),
 
         Rule::struct_def => parse_struct(pair),
@@ -99,7 +92,6 @@ fn parse_fn_struct(pair: Pair<Rule>) -> Function {
 
     let body = parse_block(next_token);
 
-    
     Function {
         name,
         generics,
@@ -115,29 +107,19 @@ fn parse_impl(pair: Pair<Rule>) -> Item {
     let mut generics = Vec::new();
     let mut methods = Vec::new();
 
-    
-    
-    
-    
-
-    
     let mut header_types: Vec<Type> = Vec::new();
 
     for part in inner {
         match part.as_rule() {
             Rule::generic_params => generics = parse_generic_params(part),
             Rule::ident => {
-                
-                
-                
                 let name = part.as_str().to_string();
                 header_types.push(Type::Named {
                     name,
                     generics: vec![],
-                }); 
+                });
             }
             Rule::generic_args => {
-                
                 if let Some(last_type) = header_types.last_mut() {
                     if let Type::Named { generics: g, .. } = last_type {
                         *g = parse_generic_args(part);
@@ -145,14 +127,12 @@ fn parse_impl(pair: Pair<Rule>) -> Item {
                 }
             }
             Rule::fn_def => {
-                
                 methods.push(parse_fn_struct(part));
             }
             _ => {}
         }
     }
 
-    
     let (trait_name, target_type) = if header_types.len() == 1 {
         (None, header_types.pop().unwrap())
     } else if header_types.len() == 2 {
@@ -197,8 +177,6 @@ fn parse_typeclass(pair: Pair<Rule>) -> Item {
     }
 }
 
-
-
 fn parse_fn(pair: Pair<Rule>) -> Item {
     let mut inner = pair.into_inner();
 
@@ -230,7 +208,6 @@ fn parse_fn(pair: Pair<Rule>) -> Item {
 
     let body = parse_block(next_token);
 
-    
     Item::Fn(Function {
         name,
         generics,
@@ -241,10 +218,8 @@ fn parse_fn(pair: Pair<Rule>) -> Item {
 }
 
 fn parse_struct(pair: Pair<Rule>) -> Item {
-    
     let inner_all = pair.into_inner();
 
-    
     let mut fields: Vec<(String, Type)> = Vec::new();
     let mut generics: Vec<String> = Vec::new();
     let mut name = String::new();
@@ -274,8 +249,6 @@ fn parse_generic_params(pair: Pair<Rule>) -> Vec<String> {
     pair.into_inner().map(|p| p.as_str().to_string()).collect()
 }
 
-
-
 fn parse_block(pair: Pair<Rule>) -> Vec<Stmt> {
     pair.into_inner().map(parse_stmt).collect()
 }
@@ -288,7 +261,6 @@ fn parse_stmt(pair: Pair<Rule>) -> Stmt {
             let mut name_part = parts.next().unwrap();
             let mut mutable = false;
 
-            
             if name_part.as_str() == "mut" {
                 mutable = true;
                 name_part = parts.next().unwrap();
@@ -296,18 +268,15 @@ fn parse_stmt(pair: Pair<Rule>) -> Stmt {
 
             let name = name_part.as_str().to_string();
 
-            
             let mut annotation = None;
             let mut value = None;
 
-            
             for part in parts {
                 match part.as_rule() {
                     Rule::type_expr => {
                         annotation = Some(parse_type(part));
                     }
                     Rule::expr => {
-                        
                         value = Some(parse_expr(part.into_inner()));
                     }
                     _ => {}
@@ -321,7 +290,7 @@ fn parse_stmt(pair: Pair<Rule>) -> Stmt {
                 value,
             }
         }
-        
+
         Rule::return_stmt => {
             let expr = parse_expr(inner.into_inner().next().unwrap().into_inner());
             Stmt::Return(expr)
@@ -334,8 +303,6 @@ fn parse_stmt(pair: Pair<Rule>) -> Stmt {
     }
 }
 
-
-
 fn parse_expr(pairs: Pairs<Rule>) -> Expr {
     PRATT_PARSER
         .map_primary(|primary| parse_atom(primary))
@@ -347,7 +314,7 @@ fn parse_expr(pairs: Pairs<Rule>) -> Expr {
                 Rule::div => BinOp::Div,
                 Rule::assign => BinOp::Assign,
                 Rule::add_assign => BinOp::AddAssign,
-                Rule::sub_assign => BinOp::SubAssign, 
+                Rule::sub_assign => BinOp::SubAssign,
                 Rule::eq => BinOp::Eq,
                 Rule::neq => BinOp::Neq,
                 Rule::lt => BinOp::Lt,
@@ -374,14 +341,12 @@ fn parse_expr(pairs: Pairs<Rule>) -> Expr {
         .parse(pairs)
 }
 
-
-
 fn parse_atom(pair: Pair<Rule>) -> Expr {
     match pair.as_rule() {
         Rule::literal => parse_literal(pair.into_inner().next().unwrap()),
         Rule::struct_init => parse_struct_init(pair),
         Rule::term => parse_term(pair),
-        Rule::expr => parse_expr(pair.into_inner()), 
+        Rule::expr => parse_expr(pair.into_inner()),
         _ => panic!("Unexpected atom: {:?}", pair.as_rule()),
     }
 }
@@ -390,7 +355,6 @@ fn parse_literal(pair: Pair<Rule>) -> Expr {
     match pair.as_rule() {
         Rule::int_lit => Expr::Literal(Literal::Int(pair.as_str().parse().unwrap())),
         Rule::string_lit => {
-            
             let s = pair.as_str();
             Expr::Literal(Literal::String(s[1..s.len() - 1].to_string()))
         }
@@ -403,7 +367,6 @@ fn parse_struct_init(pair: Pair<Rule>) -> Expr {
     let mut inner = pair.into_inner();
     let name = inner.next().unwrap().as_str().to_string();
 
-    
     let mut next = inner.next().unwrap();
     let mut generics = Vec::new();
     if next.as_rule() == Rule::generic_args {
@@ -419,10 +382,8 @@ fn parse_struct_init(pair: Pair<Rule>) -> Expr {
         }
     }
 
-    
     let mut fields = Vec::new();
-    
-    
+
     if next.as_rule() == Rule::field_init {
         fields.push(parse_field_init(next));
         for f in inner {
@@ -444,18 +405,14 @@ fn parse_field_init(pair: Pair<Rule>) -> (String, Expr) {
     (name, expr)
 }
 
-
 fn parse_term(pair: Pair<Rule>) -> Expr {
     let mut inner = pair.into_inner();
 
     let name_token = inner.next().unwrap();
     let name = name_token.as_str().to_string();
 
-    
     let mut generics: Vec<Type> = Vec::new();
 
-    
-    
     let mut expr = Expr::Variable {
         name: name.clone(),
         generics: generics.clone(),
@@ -465,7 +422,7 @@ fn parse_term(pair: Pair<Rule>) -> Expr {
         match part.as_rule() {
             Rule::generic_args => {
                 generics = parse_generic_args(part);
-                
+
                 if let Expr::Variable { name, .. } = expr {
                     expr = Expr::Variable {
                         name,
@@ -504,14 +461,11 @@ fn parse_term(pair: Pair<Rule>) -> Expr {
     expr
 }
 
-
-
 fn parse_type(pair: Pair<Rule>) -> Type {
     let inner = pair.into_inner();
     let mut mutable = false;
     let mut pointer = false;
 
-    
     let mut name = String::new();
     let mut generics = Vec::new();
 
@@ -546,9 +500,6 @@ mod tests {
     use crate::ast::{BinOp, Expr, Function, Item, Stmt, Type};
     use crate::parser::parse_program;
 
-    
-
-    
     fn extract_first_function(code: &str) -> Function {
         let program = parse_program(code).expect("Failed to parse");
         match &program.items[0] {
@@ -562,11 +513,8 @@ mod tests {
         func.body[0].clone()
     }
 
-    
-
     #[test]
     fn test_impl_parsing_distinction() {
-        
         let code_trait = "impl Barks for Animal { fn bark() {} }";
         let program = parse_program(code_trait).unwrap();
 
@@ -576,12 +524,11 @@ mod tests {
             ..
         } = &program.items[0]
         {
-            
             assert!(trait_name.is_some());
             if let Type::Named { name, .. } = trait_name.as_ref().unwrap() {
                 assert_eq!(name, "Barks");
             }
-            
+
             if let Type::Named { name, .. } = target_type {
                 assert_eq!(name, "Animal");
             }
@@ -589,7 +536,6 @@ mod tests {
             panic!("Expected Impl");
         }
 
-        
         let code_regular = "impl Animal { fn new() {} }";
         let program2 = parse_program(code_regular).unwrap();
 
@@ -599,9 +545,8 @@ mod tests {
             ..
         } = &program2.items[0]
         {
-            
             assert!(trait_name.is_none());
-            
+
             if let Type::Named { name, .. } = target_type {
                 assert_eq!(name, "Animal");
             }
@@ -619,13 +564,11 @@ mod tests {
         "#;
         let func = extract_first_function(code);
 
-        
         assert_eq!(func.generics, vec!["T", "U"]);
 
-        
         let (p_name, p_type) = &func.params[0];
         assert_eq!(p_name, "list");
-        
+
         if let Type::Named { name, generics } = p_type {
             assert_eq!(name, "List");
             if let Type::Named { name: inner, .. } = &generics[0] {
@@ -635,7 +578,6 @@ mod tests {
             }
         }
 
-        
         if let Some(Type::Named { name, generics }) = &func.ret_type {
             assert_eq!(name, "List");
             if let Type::Named { name: inner, .. } = &generics[0] {
@@ -646,16 +588,12 @@ mod tests {
 
     #[test]
     fn test_complex_math_precedence() {
-        
-        
         let code = "fn main() { 10 + 5 * 2 == 20 }";
         let stmt = extract_first_stmt_of_main(code);
 
         if let Stmt::Expr(Expr::Binary { op, lhs, rhs }) = stmt {
-            
             assert!(matches!(op, BinOp::Eq));
 
-            
             if let Expr::Binary {
                 op: op_add,
                 lhs: l_add,
@@ -663,8 +601,7 @@ mod tests {
             } = *lhs
             {
                 assert!(matches!(op_add, BinOp::Add));
-                
-                
+
                 if let Expr::Binary { op: op_mul, .. } = *r_add {
                     assert!(matches!(op_mul, BinOp::Mul));
                 } else {
@@ -680,19 +617,15 @@ mod tests {
 
     #[test]
     fn test_chained_calls_with_args() {
-        
         let code = "fn main() { obj.method(1).prop.final(2, 3) }";
         let stmt = extract_first_stmt_of_main(code);
 
-        
         if let Stmt::Expr(Expr::Call { callee, args }) = stmt {
-            assert_eq!(args.len(), 2); 
+            assert_eq!(args.len(), 2);
 
-            
             if let Expr::MemberAccess { object, field } = *callee {
                 assert_eq!(field, "final");
 
-                
                 if let Expr::MemberAccess {
                     object: inner_obj,
                     field: f2,
@@ -700,7 +633,6 @@ mod tests {
                 {
                     assert_eq!(f2, "prop");
 
-                    
                     if let Expr::Call {
                         callee: method_callee,
                         args: m_args,
@@ -708,7 +640,6 @@ mod tests {
                     {
                         assert_eq!(m_args.len(), 1);
 
-                        
                         if let Expr::MemberAccess {
                             object: root,
                             field: f3,
@@ -716,7 +647,6 @@ mod tests {
                         {
                             assert_eq!(f3, "method");
 
-                            
                             if let Expr::Variable { name: v, .. } = *root {
                                 assert_eq!(v, "obj");
                             } else {
