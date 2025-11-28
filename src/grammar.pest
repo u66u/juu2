@@ -1,0 +1,103 @@
+// Whitespace & Comments
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT    = _{ "--" ~ (!NEWLINE ~ ANY)* }
+
+program = { SOI ~ item* ~ EOI }
+
+item = { struct_def | impl_def | typeclass_def | fn_def | stmt }
+
+// Generics
+generic_params = { "<" ~ ident ~ ("," ~ ident)* ~ ">" }
+generic_args   = { "<" ~ type_expr ~ ("," ~ type_expr)* ~ ">" }
+
+// Definitions
+struct_def   = { "struct" ~ ident ~ generic_params? ~ "{" ~ struct_field* ~ "}" }
+struct_field = { ident ~ ":" ~ type_expr }
+
+impl_def      = { "impl" ~ generic_params? ~ (ident ~ generic_args? ~ "for")? ~ ident ~ generic_args? ~ "{" ~ fn_def* ~ "}" }
+typeclass_def = { "typeclass" ~ ident ~ generic_params? ~ "{" ~ fn_def* ~ "}" }
+
+fn_def     = { "fn" ~ ident ~ generic_params? ~ "(" ~ param_list? ~ ")" ~ ("->" ~ type_expr)? ~ block }
+param_list = { param ~ ("," ~ param)* }
+param      = { ident ~ ":" ~ type_expr }
+
+// Statements
+block       = { "{" ~ stmt* ~ "}" }
+stmt        = { let_stmt | return_stmt | expr_stmt }
+let_stmt = { "let" ~ "mut"? ~ ident ~ (":" ~ type_expr)? ~ ("=" ~ expr)? }
+return_stmt = { "return" ~ expr }
+expr_stmt   = { expr }
+
+// Expressions
+expr = { prefix* ~ atom ~ (infix ~ prefix* ~ atom)* }
+
+infix      = _{
+    add_assign
+  | sub_assign
+  | mul_assign
+  | div_assign
+  | eq
+  | neq
+  | le
+  | ge
+  | add
+  | sub
+  | mul
+  | div
+  | assign
+  | lt
+  | gt
+}
+add        =  { "+" }
+sub        =  { "-" }
+mul        =  { "*" }
+div        =  { "/" }
+assign     =  { "=" }
+add_assign =  { "+=" }
+sub_assign =  { "-=" }
+mul_assign =  { "*=" }
+div_assign =  { "/=" }
+eq         =  { "==" }
+neq        =  { "!=" }
+lt         =  { "<" }
+gt         =  { ">" }
+le         =  { "<=" }
+ge         =  { ">=" }
+
+prefix = _{ neg | not }
+neg    =  { "-" }
+not    =  { "!" }
+
+atom = _{
+    struct_init
+  | term
+  | literal
+  | "(" ~ expr ~ ")"
+}
+
+// Struct Init (must come before term to capture "Animal {")
+struct_init = { ident ~ generic_args? ~ "{" ~ (field_init ~ ("," ~ field_init)*)? ~ "}" }
+field_init  = { ident ~ ":" ~ expr }
+
+// Term (Variables, Calls, Dot access)
+term = { ident ~ generic_args? ~ term_suffix* }
+term_suffix = _{ method_call | member_access }
+method_call = { "(" ~ arg_list? ~ ")" }
+member_access = { "." ~ ident }
+call_suffix = { "(" ~ arg_list? ~ ")" | "." ~ ident }
+arg_list    = { expr ~ ("," ~ expr)* }
+
+literal = { int_lit | string_lit | bool_lit } // No @ here. It's a container.
+int_lit = @{ ASCII_DIGIT+ }
+string_lit = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+bool_lit = @{ "true" | "false" }
+
+// Types
+type_expr = { mut_token? ~ ptr_token? ~ ident ~ generic_args? }
+mut_token = { "mut" }   // <--- Named rule creates a Pair
+ptr_token = { "*" }
+
+ident   = @{ !keyword ~ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+keyword =  { "fn" | "struct" | "impl" | "typeclass" | "let" | "mut" | "return" | "true" | "false" }
+
+
