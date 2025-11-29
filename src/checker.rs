@@ -557,6 +557,37 @@ fn check_block(
     Ok(last_type)
 }
 
+fn check_function_body(func: &ast::Function, ctx: &ProgramContext) -> Result<(), String> {
+    let scheme = ctx
+        .functions
+        .get(&func.name)
+        .ok_or("Scheme missing")?
+        .clone();
+    let mut env = Env::new(ctx);
+
+    for (i, gen_name) in func.generics.iter().enumerate() {
+        let id = scheme.generics[i];
+        env.vars.insert(
+            gen_name.clone(),
+            Type::Var(Arc::new(Mutex::new(TypeVar::Generic { id }))),
+        );
+    }
+
+    if let Type::Function { params, ret } = &scheme.ty {
+        for (i, (p_name, _)) in func.params.iter().enumerate() {
+            env.vars.insert(p_name.clone(), params[i].clone());
+        }
+        let mut body_env = env.enter_scope();
+        let body_res = check_block(&func.body, &mut body_env, 1, ret)?;
+
+        if **ret != Type::Void {
+            unify(body_res, *ret.clone())
+                .map_err(|e| format!("Function '{}' return mismatch: {}", func.name, e))?;
+        }
+    }
+    Ok(())
+}
+
 pub fn check_program(program: &ast::Program) -> Result<ProgramContext, String> {
     let mut ctx = ProgramContext {
         types: HashMap::new(),
@@ -568,42 +599,87 @@ pub fn check_program(program: &ast::Program) -> Result<ProgramContext, String> {
     collect_types(program, &mut ctx)?;
     collect_functions(program, &mut ctx)?;
 
-    // Pass 3: Function Bodies
     for item in &program.items {
-        if let ast::Item::Fn(func) = item {
-            let scheme = ctx
-                .functions
-                .get(&func.name)
-                .ok_or("Scheme missing")?
-                .clone();
-
-            let mut env = Env::new(&ctx);
-
-            // Register Generics (map "T" -> GenericID)
-            for (i, gen_name) in func.generics.iter().enumerate() {
-                let id = scheme.generics[i];
-                env.vars.insert(
-                    gen_name.clone(),
-                    Type::Var(Arc::new(Mutex::new(TypeVar::Generic { id }))),
-                );
+        match item {
+            ast::Item::Fn(func) => {
+                check_function_body(func, &ctx)?;
             }
+            ast::Item::Impl {
+                generics,
+                trait_name: _,
+                target_type,
+                methods,
+            } => {
+                // We need a temporary env just to resolve the name "Gen"
+                let dummy_env = Env::new(&ctx);
+                let resolved_target = resolve_type(target_type, &dummy_env)?;
 
-            // Register Params
-            if let Type::Function { params, ret } = &scheme.ty {
-                for (i, (p_name, _)) in func.params.iter().enumerate() {
-                    env.vars.insert(p_name.clone(), params[i].clone());
-                }
+                let struct_name = match &resolved_target {
+                    Type::Constructor { name, .. } => name.clone(),
+                    _ => return Err("Impl block must target a struct".into()),
+                };
 
-                // Check Body in a child scope
-                let mut body_env = env.enter_scope();
-                let body_res = check_block(&func.body, &mut body_env, 1, ret)?;
+                for method in methods {
+                    let mut env = Env::new(&ctx);
 
-                if **ret != Type::Void {
-                    unify(body_res, *ret.clone()).map_err(|e| {
-                        format!("Function '{}' implicit return mismatch: {}", func.name, e)
-                    })?;
+                    // Register Impl Generics <T>
+                    // We get the GenericIDs from the Scheme we already built.
+                    let full_name = format!("{}::{}", struct_name, method.name);
+                    let scheme = ctx
+                        .functions
+                        .get(&full_name)
+                        .ok_or(format!("Missing scheme for {}", full_name))?;
+
+                    // We need to align generics' id with their names.
+                    let mut gen_idx = 0;
+
+                    // Impl Generics
+                    for name in generics {
+                        if gen_idx >= scheme.generics.len() {
+                            break;
+                        }
+                        let id = scheme.generics[gen_idx];
+                        env.vars.insert(
+                            name.clone(),
+                            Type::Var(Arc::new(Mutex::new(TypeVar::Generic { id }))),
+                        );
+                        gen_idx += 1;
+                    }
+
+                    // Method Generics
+                    for name in &method.generics {
+                        if gen_idx >= scheme.generics.len() {
+                            break;
+                        }
+                        let id = scheme.generics[gen_idx];
+                        env.vars.insert(
+                            name.clone(),
+                            Type::Var(Arc::new(Mutex::new(TypeVar::Generic { id }))),
+                        );
+                        gen_idx += 1;
+                    }
+
+                    env.vars.insert("Self".into(), resolved_target.clone());
+
+                    // params
+                    if let Type::Function { params, ret } = &scheme.ty {
+                        for (i, (p_name, _)) in method.params.iter().enumerate() {
+                            env.vars.insert(p_name.clone(), params[i].clone());
+                        }
+
+                        // bpdy
+                        let mut body_env = env.enter_scope();
+                        let body_res = check_block(&method.body, &mut body_env, 1, ret)?;
+
+                        if **ret != Type::Void {
+                            unify(body_res, *ret.clone()).map_err(|e| {
+                                format!("Method '{}' return mismatch: {}", method.name, e)
+                            })?;
+                        }
+                    }
                 }
             }
+            _ => {}
         }
     }
 

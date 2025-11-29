@@ -1,11 +1,13 @@
 mod ast;
 mod checker;
-mod monomorphize;
+mod codegen;
 mod infer;
 mod ir;
+mod monomorphize;
 mod parser;
 mod types;
 
+use crate::codegen::c;
 use std::fs;
 
 fn main() {
@@ -24,13 +26,23 @@ fn main() {
         }
 
         typeclass Animal {
-            fn bark(obj: mut *Self) -> String {
+            fn bark(obj: Self) -> String {
                 "bark"
             }
         }
 
+        typeclass Adder {
+            fn add(obj: Self) -> Int {}
+        }
+
+        impl Adder for Point {
+            fn add(obj: Self) -> Int {
+                obj.x + obj.y
+            }
+        }
+
         impl<T> Animal for Gen<T> {
-            fn bark(obj: Self) {
+            fn bark(obj: Self) -> String {
                 "bark"
             }
         }
@@ -41,8 +53,10 @@ fn main() {
 
         fn main() {
             let xd = 5
-            let g = Gen<Int> {}
+            let g = Gen<Int> { internal: 5}
             g.bark()
+            let a = Point {x: 5, y: 5}
+            a.add()
         }
     "#;
 
@@ -50,16 +64,15 @@ fn main() {
     println!("{}", source_code);
     println!("-------------------");
 
-    println!("1. Parsing...");
+    println!("Parsing...");
     match parser::parse_program(source_code) {
         Ok(program) => {
-            println!("   ✅ Parse Successful!");
             println!("Ast: {:?}", &program);
 
             println!("2. Checking Types...");
             match checker::check_program(&program) {
                 Ok(ctx) => {
-                    println!("   ✅ Type Check Successful!");
+                    println!(" Type Check Successful!");
                     println!("\n--- Inferred Globals ---");
                     for (name, scheme) in &ctx.functions {
                         println!("Function {}: {:?}", name, scheme.ty);
@@ -68,14 +81,24 @@ fn main() {
                     for (name, info) in &ctx.types {
                         println!("Struct {}: {:?}", name, info.fields);
                     }
+                    let ir = monomorphize::run(&program, &ctx);
+                    let c_code = c::generate(&ir);
+
+                    println!("\n--- Generated C Code ---");
+                    println!("{}", c_code);
+
+                    if !fs::exists("./out").unwrap() {
+                        fs::create_dir("./out").unwrap();
+                    }
+                    fs::write("out/output.c", c_code).expect("Unable to write file");
                 }
                 Err(e) => {
-                    eprintln!("   ❌ Type Error: {}", e);
+                    eprintln!("   Type Error: {}", e);
                 }
             }
         }
         Err(e) => {
-            eprintln!("   ❌ Parse Error: {}", e);
+            eprintln!("   Parse Error: {}", e);
         }
     }
 }

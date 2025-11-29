@@ -1,9 +1,9 @@
+use crate::ast::*;
 use lazy_static::lazy_static;
 use pest::Parser;
 use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::{Assoc::*, Op, PrattParser};
 use pest_derive::Parser;
-use crate::ast::*;
 
 #[derive(Parser)]
 #[grammar = "grammar.pest"]
